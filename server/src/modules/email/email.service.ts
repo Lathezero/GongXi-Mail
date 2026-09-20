@@ -30,6 +30,7 @@ export const emailService = {
                     id: true,
                     email: true,
                     clientId: true,
+                recoveryEmail: true,
                 status: true,
                 groupId: true,
                 group: { select: { id: true, name: true, fetchStrategy: true } },
@@ -59,6 +60,8 @@ export const emailService = {
                 email: true,
                 clientId: true,
                 password: !!includeSecrets,
+                recoveryEmail: true,
+                recoveryPassword: !!includeSecrets,
                 refreshToken: !!includeSecrets,
                 status: true,
                 groupId: true,
@@ -81,6 +84,7 @@ export const emailService = {
                 ...email,
                 refreshToken: email.refreshToken ? decrypt(email.refreshToken) : email.refreshToken,
                 password: email.password ? decrypt(email.password) : email.password,
+                recoveryPassword: email.recoveryPassword ? decrypt(email.recoveryPassword) : email.recoveryPassword,
             };
         }
 
@@ -99,6 +103,8 @@ export const emailService = {
                 clientId: true,
                 refreshToken: true,
                 password: true,
+                recoveryEmail: true,
+                recoveryPassword: true,
                 status: true,
                 groupId: true,
                 group: {
@@ -118,6 +124,8 @@ export const emailService = {
             ...email,
             refreshToken: decrypt(email.refreshToken),
             password: email.password ? decrypt(email.password) : undefined,
+            recoveryEmail: email.recoveryEmail ?? undefined,
+            recoveryPassword: email.recoveryPassword ? decrypt(email.recoveryPassword) : undefined,
             fetchStrategy: email.group?.fetchStrategy || 'GRAPH_FIRST',
         };
     },
@@ -126,7 +134,7 @@ export const emailService = {
      * 创建邮箱账户
      */
     async create(input: CreateEmailInput) {
-        const { email, clientId, refreshToken, password, groupId } = input;
+        const { email, clientId, refreshToken, password, recoveryEmail, recoveryPassword, groupId } = input;
 
         const exists = await prisma.emailAccount.findUnique({ where: { email } });
         if (exists) {
@@ -135,6 +143,7 @@ export const emailService = {
 
         const encryptedToken = encrypt(refreshToken);
         const encryptedPassword = password ? encrypt(password) : null;
+        const encryptedRecoveryPassword = recoveryPassword ? encrypt(recoveryPassword) : null;
 
         const account = await prisma.emailAccount.create({
             data: {
@@ -142,6 +151,8 @@ export const emailService = {
                 clientId,
                 refreshToken: encryptedToken,
                 password: encryptedPassword,
+                recoveryEmail: recoveryEmail || null,
+                recoveryPassword: encryptedRecoveryPassword,
                 groupId: groupId || null,
             },
             select: {
@@ -166,7 +177,7 @@ export const emailService = {
             throw new AppError('NOT_FOUND', 'Email account not found', 404);
         }
 
-        const { refreshToken, password, ...rest } = input;
+        const { refreshToken, password, recoveryEmail, recoveryPassword, ...rest } = input;
         const updateData: Prisma.EmailAccountUpdateInput = { ...rest };
 
         // 加密 sensitive data
@@ -175,6 +186,12 @@ export const emailService = {
         }
         if (password) {
             updateData.password = encrypt(password);
+        }
+        if (recoveryEmail !== undefined) {
+            updateData.recoveryEmail = recoveryEmail || null;
+        }
+        if (recoveryPassword) {
+            updateData.recoveryPassword = encrypt(recoveryPassword);
         }
 
         const account = await prisma.emailAccount.update({
@@ -245,7 +262,7 @@ export const emailService = {
      * 批量导入
      */
     async import(input: ImportEmailInput) {
-        const { content, separator, groupId } = input;
+        const { content, separator, format, groupId } = input;
         const lines = content.split('\n').filter((line: string) => line.trim());
 
         if (groupId !== undefined) {
@@ -266,19 +283,57 @@ export const emailService = {
                     throw new Error('Invalid format');
                 }
 
-                let email, clientId, refreshToken, password;
+                let email, clientId, refreshToken, password, recoveryEmail, recoveryPassword;
 
-                // 尝试猜测格式
-                // 1. email----password----clientId----refreshToken (4列)
-                // 2. email----clientId----refreshToken (3列)
-                // 3. email----clientId----uuid----info----refreshToken (5列)
+                // 显式格式：列数不符直接报错，不做任何猜测
+                const expectCols = (n: number, label: string) => {
+                    if (parts.length !== n) {
+                        throw new Error(`Format "${label}" expects ${n} columns, got ${parts.length}`);
+                    }
+                };
 
-                if (parts.length >= 5) {
+                if (format === 'vendor6') {
+                    // email----password----clientId----refreshToken----recoveryEmail----recoveryPassword
+                    expectCols(6, 'vendor6');
+                    [email, password, clientId, refreshToken, recoveryEmail, recoveryPassword] = parts;
+                } else if (format === 'vendor5') {
+                    // email----password----clientId----refreshToken----recoveryEmail
+                    expectCols(5, 'vendor5');
+                    [email, password, clientId, refreshToken, recoveryEmail] = parts;
+                } else if (format === 'simple4') {
+                    // email----password----clientId----refreshToken
+                    expectCols(4, 'simple4');
+                    [email, password, clientId, refreshToken] = parts;
+                } else if (format === 'simple3') {
+                    // email----clientId----refreshToken
+                    expectCols(3, 'simple3');
+                    [email, clientId, refreshToken] = parts;
+                } else if (format === 'legacy5') {
                     // email----clientId----uuid----info----refreshToken
+                    expectCols(5, 'legacy5');
                     email = parts[0];
                     clientId = parts[1];
                     refreshToken = parts[4];
-                    // 这种格式通常没有密码，或者密码隐藏在 info 里？暂且不处理密码
+                } else if (parts.length >= 6) {
+                    // auto：email----password----clientId----refreshToken----recoveryEmail----recoveryPassword
+                    email = parts[0];
+                    password = parts[1];
+                    clientId = parts[2];
+                    refreshToken = parts[3];
+                    recoveryEmail = parts[4] || undefined;
+                    recoveryPassword = parts[5] || undefined;
+                } else if (parts.length === 5 && parts[4].includes('@')) {
+                    // auto：商家5列变体（第5列是邮箱，用 @ 与旧5列格式的 refreshToken 区分）
+                    email = parts[0];
+                    password = parts[1];
+                    clientId = parts[2];
+                    refreshToken = parts[3];
+                    recoveryEmail = parts[4];
+                } else if (parts.length === 5) {
+                    // auto：email----clientId----uuid----info----refreshToken
+                    email = parts[0];
+                    clientId = parts[1];
+                    refreshToken = parts[4];
                 } else if (parts.length === 4) {
                     // email----password----clientId----refreshToken
                     email = parts[0];
@@ -295,6 +350,10 @@ export const emailService = {
                 if (!email || !clientId || !refreshToken) {
                     throw new Error('Missing required fields');
                 }
+                if (refreshToken.includes('@')) {
+                    // 令牌不可能含 @：大概率列顺序/列数与猜测不符，拒绝静默写脏数据
+                    throw new Error('refreshToken looks like an email address — wrong column mapping');
+                }
 
                 const data: Prisma.EmailAccountUncheckedUpdateInput = {
                     clientId,
@@ -302,6 +361,8 @@ export const emailService = {
                     status: 'ACTIVE',
                 };
                 if (password) data.password = encrypt(password);
+                if (recoveryEmail) data.recoveryEmail = recoveryEmail;
+                if (recoveryPassword) data.recoveryPassword = encrypt(recoveryPassword);
                 if (groupId !== undefined) data.groupId = groupId;
 
                 // 检查是否存在
@@ -322,6 +383,12 @@ export const emailService = {
                     };
                     if (password) {
                         createData.password = encrypt(password);
+                    }
+                    if (recoveryEmail) {
+                        createData.recoveryEmail = recoveryEmail;
+                    }
+                    if (recoveryPassword) {
+                        createData.recoveryPassword = encrypt(recoveryPassword);
                     }
                     if (groupId !== undefined) {
                         createData.groupId = groupId;

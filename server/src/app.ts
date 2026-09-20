@@ -30,6 +30,8 @@ export async function buildApp() {
         requestIdLogLabel: 'requestId',
         disableRequestLogging: true,
         loggerInstance: logger,
+        // 默认 1MB 太小：批量导入几万行邮箱数据（纯文本）可达数 MB，放宽到 50MB
+        bodyLimit: 50 * 1024 * 1024,
     });
 
     const parsedCorsOrigins = (env.CORS_ORIGIN || '')

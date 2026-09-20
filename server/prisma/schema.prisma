@@ -81,6 +81,8 @@ model EmailAccount {
   email        String      @unique @db.VarChar(255)
   clientId     String      @map("client_id") @db.VarChar(100)
   password     String?     @db.VarChar(255)
+  recoveryEmail    String? @map("recovery_email") @db.VarChar(255)
+  recoveryPassword String? @map("recovery_password") @db.VarChar(255)
   refreshToken String      @map("refresh_token") @db.Text
   status       EmailStatus @default(ACTIVE)
   groupId      Int?        @map("group_id")

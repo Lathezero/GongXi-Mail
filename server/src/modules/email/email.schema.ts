@@ -5,6 +5,8 @@ export const createEmailSchema = z.object({
     clientId: z.string().min(1),
     refreshToken: z.string().min(1),
     password: z.string().optional(),
+    recoveryEmail: z.string().email().optional(),
+    recoveryPassword: z.string().optional(),
     groupId: z.coerce.number().int().positive().optional(),
 });
 
@@ -13,6 +15,8 @@ export const updateEmailSchema = z.object({
     clientId: z.string().min(1).optional(),
     refreshToken: z.string().min(1).optional(),
     password: z.string().optional(),
+    recoveryEmail: z.string().email().optional(),
+    recoveryPassword: z.string().optional(),
     status: z.enum(['ACTIVE', 'ERROR', 'DISABLED']).optional(),
     groupId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
 });
@@ -26,9 +30,19 @@ export const listEmailSchema = z.object({
     groupName: z.string().optional(),
 });
 
+export const importFormatEnum = z.enum([
+    'auto',      // 自动猜测（兼容行为）
+    'vendor6',   // email----password----clientId----refreshToken----recoveryEmail----recoveryPassword
+    'vendor5',   // email----password----clientId----refreshToken----recoveryEmail
+    'simple4',   // email----password----clientId----refreshToken
+    'simple3',   // email----clientId----refreshToken
+    'legacy5',   // email----clientId----uuid----info----refreshToken
+]);
+
 export const importEmailSchema = z.object({
     content: z.string().min(1),
     separator: z.string().default('----'),
+    format: importFormatEnum.default('auto'),
     groupId: z.coerce.number().int().positive().optional(),
 });
 

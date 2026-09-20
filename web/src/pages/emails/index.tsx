@@ -68,6 +68,7 @@ interface EmailAccount {
     id: number;
     email: string;
     clientId: string;
+    recoveryEmail?: string | null;
     status: 'ACTIVE' | 'ERROR' | 'DISABLED';
     groupId: number | null;
     group: { id: number; name: string } | null;
@@ -93,6 +94,8 @@ interface MailItem {
 
 interface EmailDetailsResult extends EmailAccount {
     refreshToken: string;
+    password?: string | null;
+    recoveryPassword?: string | null;
 }
 
 const EmailsPage: React.FC = () => {
@@ -111,6 +114,7 @@ const EmailsPage: React.FC = () => {
     const [filterGroupId, setFilterGroupId] = useState<number | undefined>(undefined);
     const [importContent, setImportContent] = useState('');
     const [separator, setSeparator] = useState('----');
+    const [importFormat, setImportFormat] = useState<string>('auto');
     const [importGroupId, setImportGroupId] = useState<number | undefined>(undefined);
     const [mailList, setMailList] = useState<MailItem[]>([]);
     const [mailLoading, setMailLoading] = useState(false);
@@ -214,6 +218,8 @@ const EmailsPage: React.FC = () => {
                     email: details.email,
                     clientId: details.clientId,
                     refreshToken: details.refreshToken,
+                    recoveryEmail: details.recoveryEmail ?? undefined,
+                    recoveryPassword: details.recoveryPassword ?? undefined,
                     status: details.status,
                     groupId: details.groupId,
                 });
@@ -311,10 +317,29 @@ const EmailsPage: React.FC = () => {
             const res = await emailApi.import(
                 importContent,
                 separator,
-                toOptionalNumber(importGroupId)
+                toOptionalNumber(importGroupId),
+                importFormat
             );
             if (res.code === 200) {
-                message.success(res.message);
+                const result = res.data as { success?: number; failed?: number; errors?: string[] } | undefined;
+                const okCount = result?.success ?? 0;
+                const failCount = result?.failed ?? 0;
+                if (failCount > 0) {
+                    Modal.warning({
+                        title: `导入完成：成功 ${okCount} 条，失败 ${failCount} 条`,
+                        width: 720,
+                        content: (
+                            <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                                <Text type="danger">失败明细（前 50 条）：</Text>
+                                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 12 }}>
+                                    {(result?.errors ?? []).slice(0, 50).join('\n')}
+                                </pre>
+                            </div>
+                        ),
+                    });
+                } else {
+                    message.success(`导入成功：${okCount} 条`);
+                }
                 setImportModalVisible(false);
                 setImportContent('');
                 setImportGroupId(undefined);
@@ -562,6 +587,13 @@ const EmailsPage: React.FC = () => {
             dataIndex: 'clientId',
             key: 'clientId',
             ellipsis: true,
+        },
+        {
+            title: '辅助邮箱',
+            dataIndex: 'recoveryEmail',
+            key: 'recoveryEmail',
+            ellipsis: true,
+            render: (v: string | null) => v || '-',
         },
         {
             title: '分组',
@@ -910,6 +942,12 @@ const EmailsPage: React.FC = () => {
                     <Form.Item name="password" label="密码">
                         <Input.Password placeholder="可选" />
                     </Form.Item>
+                    <Form.Item name="recoveryEmail" label="辅助邮箱" rules={[{ type: 'email', message: '请输入有效的辅助邮箱地址' }]}>
+                        <Input placeholder="可选：用于找回/接码的辅助邮箱" />
+                    </Form.Item>
+                    <Form.Item name="recoveryPassword" label="辅助邮箱密码">
+                        <Input.Password placeholder="可选" />
+                    </Form.Item>
 
                     <Form.Item
                         name="clientId"
@@ -953,6 +991,8 @@ const EmailsPage: React.FC = () => {
                             上传文件或粘贴内容。支持多种格式，将尝试自动解析。
                             <br />
                             推荐格式：邮箱{separator}密码{separator}客户端ID{separator}刷新令牌
+                            <br />
+                            令牌号格式：邮箱{separator}密码{separator}客户端ID{separator}刷新令牌{separator}辅助邮箱{separator}辅助邮箱密码
                         </Text>
                     </div>
                     <Input
@@ -960,6 +1000,19 @@ const EmailsPage: React.FC = () => {
                         value={separator}
                         onChange={(e) => setSeparator(e.target.value)}
                         style={{ width: 200 }}
+                    />
+                    <Select
+                        value={importFormat}
+                        onChange={(value: string) => setImportFormat(value)}
+                        style={{ width: 420 }}
+                        options={[
+                            { value: 'auto', label: '自动识别格式' },
+                            { value: 'vendor6', label: '令牌号6列：邮箱/密码/客户端ID/令牌/辅助邮箱/辅助邮箱密码' },
+                            { value: 'vendor5', label: '令牌号5列：邮箱/密码/客户端ID/令牌/辅助邮箱' },
+                            { value: 'simple4', label: '4列：邮箱/密码/客户端ID/令牌' },
+                            { value: 'simple3', label: '3列：邮箱/客户端ID/令牌' },
+                            { value: 'legacy5', label: '旧5列：邮箱/客户端ID/uuid/info/令牌' },
+                        ]}
                     />
                     <Select
                         placeholder="导入到分组（可选）"
@@ -975,17 +1028,10 @@ const EmailsPage: React.FC = () => {
                             reader.onload = (e) => {
                                 const fileContent = e.target?.result as string;
                                 if (fileContent) {
-                                    const lines = fileContent.split(/\r?\n/).filter((line: string) => line.trim());
-                                    const processedLines = lines.map((line: string) => {
-                                        const parts = line.split(separator);
-                                        if (parts.length >= 5) {
-                                            return `${parts[0]}${separator}${parts[1]}${separator}${parts[4]}`;
-                                        }
-                                        return line;
-                                    });
-
-                                    setImportContent(processedLines.join('\n'));
-                                    message.success(`文件读取成功，已解析 ${lines.length} 行数据`);
+                                    // 后端已支持 3/4/5/6 列自动识别，前端不再裁剪列，原样透传
+                                    const lineCount = fileContent.split(/\r?\n/).filter((line: string) => line.trim()).length;
+                                    setImportContent(fileContent);
+                                    message.success(`文件读取成功，共 ${lineCount} 行数据`);
                                 }
                             };
                             reader.readAsText(file);
