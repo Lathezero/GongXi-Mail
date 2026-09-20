@@ -129,6 +129,7 @@ npm run test
 | `/api/list-emails` | 获取系统所有可用邮箱 | - |
 | `/api/pool-stats` | 邮箱池统计 | - |
 | `/api/reset-pool` | 重置分配记录 | 释放当前 Key 占用的所有邮箱标记 |
+| `/api/import-emails` | 批量导入邮箱 | 仅 POST；Body 同管理端导入：`content`/`separator`/`format`/`groupId` |
 
 #### 使用流程
 
@@ -180,6 +181,7 @@ npm run test
 | `list_emails` | 获取邮箱列表 |
 | `pool_stats` | 邮箱池统计 |
 | `pool_reset` | 重置邮箱池 |
+| `email_import` | 批量导入邮箱 |
 
 ## API Key 权限键
 

@@ -21,6 +21,7 @@ const ApiDocsPage: React.FC = () => {
     list_emails: '获取邮箱列表',
     pool_stats: '邮箱池统计',
     pool_reset: '重置邮箱池',
+    email_import: '批量导入邮箱',
   };
 
   const logActionRows = LOG_ACTION_OPTIONS.map((item) => ({

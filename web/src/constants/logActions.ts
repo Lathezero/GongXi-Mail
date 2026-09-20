@@ -7,6 +7,7 @@ export const LOG_ACTIONS = {
     LIST_EMAILS: 'list_emails',
     POOL_STATS: 'pool_stats',
     POOL_RESET: 'pool_reset',
+    EMAIL_IMPORT: 'email_import',
 } as const;
 
 export type LogAction = typeof LOG_ACTIONS[keyof typeof LOG_ACTIONS];
@@ -25,6 +26,7 @@ export const LOG_ACTION_LABELS: Record<LogAction, string> = {
     [LOG_ACTIONS.LIST_EMAILS]: '获取邮箱列表',
     [LOG_ACTIONS.POOL_STATS]: '邮箱池统计',
     [LOG_ACTIONS.POOL_RESET]: '重置邮箱池',
+    [LOG_ACTIONS.EMAIL_IMPORT]: '批量导入邮箱',
 };
 
 export const LOG_ACTION_COLORS: Record<LogAction, string> = {
@@ -36,6 +38,7 @@ export const LOG_ACTION_COLORS: Record<LogAction, string> = {
     [LOG_ACTIONS.LIST_EMAILS]: 'default',
     [LOG_ACTIONS.POOL_STATS]: 'default',
     [LOG_ACTIONS.POOL_RESET]: 'warning',
+    [LOG_ACTIONS.EMAIL_IMPORT]: 'success',
 };
 
 export const LOG_ACTION_OPTIONS: Array<{ value: LogAction; label: string }> = [
@@ -47,6 +50,7 @@ export const LOG_ACTION_OPTIONS: Array<{ value: LogAction; label: string }> = [
     { value: LOG_ACTIONS.LIST_EMAILS, label: LOG_ACTION_LABELS[LOG_ACTIONS.LIST_EMAILS] },
     { value: LOG_ACTIONS.POOL_STATS, label: LOG_ACTION_LABELS[LOG_ACTIONS.POOL_STATS] },
     { value: LOG_ACTIONS.POOL_RESET, label: LOG_ACTION_LABELS[LOG_ACTIONS.POOL_RESET] },
+    { value: LOG_ACTIONS.EMAIL_IMPORT, label: LOG_ACTION_LABELS[LOG_ACTIONS.EMAIL_IMPORT] },
 ];
 
 export function normalizeLogAction(action: string): LogAction | undefined {

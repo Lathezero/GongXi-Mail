@@ -2,6 +2,7 @@ import { type FastifyPluginAsync } from 'fastify';
 import { mailService } from './mail.service.js';
 import { poolService } from './pool.service.js';
 import { emailService } from '../email/email.service.js';
+import { importEmailSchema } from '../email/email.schema.js';
 import { MAIL_LOG_ACTIONS } from './mail.actions.js';
 import { z } from 'zod';
 import { AppError } from '../../plugins/error.js';
@@ -564,6 +565,45 @@ const mailRoutes: FastifyPluginAsync = async (fastify) => {
         } catch (err: unknown) {
             await mailService.logApiCall(
                 MAIL_LOG_ACTIONS.POOL_RESET,
+                request.apiKey?.id,
+                undefined,
+                request.ip,
+                getErrorStatusCode(err),
+                Date.now() - startTime,
+                request.id
+            );
+            throw err;
+        }
+    });
+
+    // ========================================
+    // 批量导入邮箱（API Key 认证）
+    // ========================================
+    fastify.post('/import-emails', async (request) => {
+        const startTime = Date.now();
+        try {
+            if (!request.apiKey?.id) {
+                throw new AppError('AUTH_REQUIRED', 'API Key required', 401);
+            }
+            fastify.assertApiPermission(request, MAIL_LOG_ACTIONS.EMAIL_IMPORT);
+
+            const input = importEmailSchema.parse(request.body);
+            const result = await emailService.import(input);
+
+            await mailService.logApiCall(
+                MAIL_LOG_ACTIONS.EMAIL_IMPORT,
+                request.apiKey.id,
+                undefined,
+                request.ip,
+                200,
+                Date.now() - startTime,
+                request.id
+            );
+
+            return { success: true, data: result };
+        } catch (err: unknown) {
+            await mailService.logApiCall(
+                MAIL_LOG_ACTIONS.EMAIL_IMPORT,
                 request.apiKey?.id,
                 undefined,
                 request.ip,
